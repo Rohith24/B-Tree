@@ -33,7 +33,9 @@ struct datebooked
 	int userid;
 	char date[11];
 };
-
+struct sin_indirect_block{
+	int direct[5];
+};
 char services[10][20] =
 {
 	"Doctors",
@@ -47,29 +49,39 @@ char services[10][20] =
 	"Courier",
 	"Psychiatrists"
 };
-//void writecal()
-//{
-//	system("fsutil file createnew calendar.bin 104857600");
-//	FILE* fcal = fopen("calendar.bin", "r+b");
-//	fseek(fcal, 0, 0);
-//	for (int i = 0; i < 10; i++)
-//	{
-//		struct service ser;
-//		ser.ID = i + 1;
-//		fwrite(&ser, sizeof(ser), 1, fcal);
-//	}
-//	fseek(fcal, 10000000, 0);
-//	for (int i = 0; i < 1000000; i++)
-//		calbitvector[i] = 0;
-//	fwrite(&calbitvector, sizeof(calbitvector), 1, fcal);
-//	fseek(fcal, 1000, 0);
-//	for (int i = 0; i < 1000000; i++)
-//	{
-//		struct datebooked dt;
-//		fwrite(&dt, sizeof(dt), 1, fcal);
-//	}
-//	fclose(fcal);
-//}
+int leap(int y)
+{
+	return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+
+int convert_date_into_day(int year,int month,int day) {
+
+	int mo[12] = { 31, 28 + leap(year), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+	int i;
+	int dofy = 0;   // EDIT
+
+	for (i = 0; i<(month - 1); i++) {
+		dofy += mo[i];
+	}
+
+	dofy += day;
+	return dofy;
+}
+
+
+void get_booked_appointments(FILE *f, struct service ser, struct service_people ser_pep, char *buff){
+	fseek(f, (ser.ID - 1) * 50 * 180, 0);
+	fseek(f, (ser_pep.id - 1) * 180, 0);
+	char bitvec[180];
+	fread(&bitvec, 180, 1, f);
+	for (int i = 0; i < 180; i++){
+		if (bitvec[i] == 1){
+			//convert_day_into_date(i);
+			sprintf(buff, "%d\n", i);
+		}
+	}
+}
 
 void view_services(char *buff){
 	for (int i = 0; i < 10; i++){
@@ -78,7 +90,7 @@ void view_services(char *buff){
 	}
 }
 
-void print_service_people(FILE *f,struct service ser,char *buff){
+int print_service_people(FILE *f,struct service ser,char *buff){
 	struct service_people ser_pep;
 	int j = 1, count = 0;
 	char buffer[1024] = "";
@@ -97,47 +109,33 @@ void print_service_people(FILE *f,struct service ser,char *buff){
 			count++;
 		}
 	}
-	/*if (ser.single_indirect != 0){
-		int direct_offset = 0;
-		struct single_indirect_block sib;
+	if (ser.single_indirect != 0){
+		int dir_offset = 0;
+		struct sin_indirect_block sib;
 		int single_indir_blok[5];
-		fseek(f, single_indirect_start_offset, 0);
-		fseek(f, cat.category_id * cat.size_of_indirect, 1);
+		fseek(f, single_indirect_offset, 0);
+		fseek(f, ser.ID * 9, 1);
 		fread(&single_indir_blok, sizeof(int)* 9, 1, f);
-		for (int i = 0; i < cat.size_of_indirect; i++){
+		for (int i = 0; i < 9; i++){
 			if (single_indir_blok[i] != 0){
-				direct_offset = single_indir_blok[i];
-				fseek(f, direct_offset, 0);
-				struct single_indirect_block sib;
+				dir_offset = single_indir_blok[i];
+				fseek(f, dir_offset, 0);
+				struct sin_indirect_block sib;
 				fread(&sib, sizeof(sib), 1, f);
 				for (int i = 0; i < 50; i++){
-					if (sib.directblocks[i] == NULL){
-						fseek(f, sib.directblocks[i], 0);
+					if (sib.direct[i] == NULL){
+						fseek(f, sib.direct[i], 0);
 						//printf("%ld", ftell(f));
-						fread(&msg, sizeof(struct Message_inode), 1, f);
-						sprintf(buffer, "\n%d:\nUser%d says:\t%s", j++, msg.userid, msg.msgtext);
+						fread(&ser_pep, sizeof(struct service_people), 1, f);
+						sprintf(buffer, "\n%d:\t%s\t%s", j++, ser_pep.name, ser_pep.role);
 						strcat(buff, buffer);
 						count++;
 					}
 				}
-				strcat(buff, "\n\tNext->");
-				strcat(buff, "\nEnter choice(n-Next,e-exit:");
-				if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
-					fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
-					free(csock);
-					return -1;
-				}
-				memset(recvbuf, 0, recvbuf_len);
-				if ((recv_byte_cnt = recv(*csock, recvbuf, recvbuf_len, 0)) == SOCKET_ERROR){
-					fprintf(stderr, "Error receiving data %d\n", WSAGetLastError());
-					free(csock);
-					return -1;
-				}
 			}
 		}
-				//scanf("%c", &choice);
 	}
-	return count;*/
+	return count;
 }
 
 int get_free_space_for_people(FILE *f){
@@ -167,7 +165,7 @@ int get_free_space_direct_people(FILE *f){
 	for (int i = 0; i < s_i_bitvector_size; i++){
 		if (bitvector[i] == 0){
 			bitvector[i] = 1;
-			freespace = direct_offset + (i*sizeof(struct single_indirect_block));
+			freespace = direct_offset + (i*sizeof(struct sin_indirect_block));
 			break;
 		}
 	}
@@ -177,14 +175,14 @@ int get_free_space_direct_people(FILE *f){
 	return freespace;
 }
 
-void add_service_people(FILE *f, struct service *ser, int *csock){
+void add_service_people(FILE *f, struct service *ser, int *csock,int id){
 	char buff[1024];
 	int bytecount;
 	char recvbuf[1024];
 	int recvbuf_len = 1024;
 	int recv_byte_cnt;
 	struct service_people ser_pep;
-	ser_pep.id = ser->ID;
+	ser_pep.id = id;
 	sprintf(buff, "\nEnter Name,Role,Phone Number:(seperated by ',')");
 	if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
 		fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
@@ -227,6 +225,7 @@ void menu_services(FILE *f, struct service ser,int offset, int *csock){
 			return;
 		}
 		option = atoi(recvbuf);//scanf("%d", &option);
+		int j = 0;
 		switch (option)
 		{
 		case 1:
@@ -239,14 +238,15 @@ void menu_services(FILE *f, struct service ser,int offset, int *csock){
 					fseek(f, offset, 0);
 					fwrite(&ser, sizeof(struct service), 1, f);
 					fseek(f, space, 0);
-					add_service_people(f, &ser, csock);
+					add_service_people(f, &ser, csock,i+1);
 					count++;
 					break;
 				}
+				j++;
 			}
 			if (count == 0){
 				int dir_offset = 0;
-				struct single_indirect_block sib;
+				struct sin_indirect_block sib;
 				int single_indir_blok[9];
 				fseek(f, single_indirect_offset, 0);
 				fseek(f, ser.ID * 9, 1);
@@ -264,22 +264,24 @@ void menu_services(FILE *f, struct service ser,int offset, int *csock){
 							dir_offset = single_indir_blok[i];
 							break;
 						}
+						j += 9;
 					}
 				}
 				fseek(f, dir_offset, 0);
-				//struct single_indirect_block sib;
+				//struct sin_indirect_block sib;
 				fread(&sib, sizeof(sib), 1, f);
 				for (int i = 0; i < 5; i++){
-					if (sib.directblocks[i] == NULL){
+					if (sib.direct[i] == NULL){
 						int space = get_free_space_for_people(f);
-						sib.directblocks[i] = space;
+						sib.direct[i] = space;
 						fseek(f, dir_offset, 0);
-						fwrite(&sib, sizeof(struct single_indirect_block), 1, f);
+						fwrite(&sib, sizeof(struct sin_indirect_block), 1, f);
 						fseek(f, space, 0);
-						add_service_people(f, &ser, csock);
+						add_service_people(f, &ser, csock, j + 1);
 						count++;
 						break;
 					}
+					j++;
 				}
 				fseek(f, offset, 0);
 				fwrite(&ser, sizeof(struct service), 1, f);
@@ -341,7 +343,21 @@ void calendarstore(int *csock, int current_user_id){
 		fread(&ser, sizeof(struct service), 1, f);
 		memset(&buff, 0, 1024);
 		menu_services(f, ser,offset, csock);
-		print_service_people(f, ser, buff);
+		sprintf(buff, "\n\People are:");
+		if (print_service_people(f, ser, buff) == 0){
+			if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
+				fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
+				free(csock);
+				return;
+			}
+			memset(recvbuf, 0, recvbuf_len);
+			if ((recv_byte_cnt = recv(*csock, recvbuf, recvbuf_len, 0)) == SOCKET_ERROR){
+				fprintf(stderr, "Error receiving data %d\n", WSAGetLastError());
+				free(csock);
+				return;
+			}
+		}
+		strcat(buff, "\nEnter 0 to back\nEnter service People number to view appointments.\n");
 		if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
 			fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
 			free(csock);
@@ -353,6 +369,86 @@ void calendarstore(int *csock, int current_user_id){
 			free(csock);
 			return;
 		}
+		option = atoi(recvbuf);//scanf("%d", &option);
+		if (option == 0)
+			continue;
+		struct service_people ser_pep;
+		int j = 1, count = 0;
+		int msgoffset;
+		for (int i = 0; i < 5; i++){
+			if (ser.service_people[i] != NULL){
+				if (option == j){
+					msgoffset = ser.service_people[i];
+					fseek(f, ser.service_people[i], 0);
+					//printf("%ld", ftell(f));
+					fread(&ser_pep, sizeof(struct Message_inode), 1, f);
+					count++;
+					break;
+				}
+				j++;
+			}
+		}
+		if (count == 0){
+			int dir_offset = 0;
+			struct sin_indirect_block sib;
+			int single_indir_blok[9];
+			fseek(f, single_indirect_offset, 0);
+			fseek(f, ser.ID * 9, 1);
+			fread(&single_indir_blok, sizeof(int)* 9, 1, f);
+			for (int i = 0; i < 9; i++){
+				if (single_indir_blok[i] != 0){
+					dir_offset = single_indir_blok[i];
+					fseek(f, dir_offset, 0);
+					struct sin_indirect_block sib;
+					fread(&sib, sizeof(sib), 1, f);
+					for (int i = 0; i < 50; i++){
+						if (sib.direct[i] != NULL){
+							if (option == j){
+								msgoffset = sib.direct[i];
+								fseek(f, sib.direct[i], 0);
+								//printf("%ld", ftell(f));
+								fread(&ser_pep, sizeof(struct service_people), 1, f);
+								count++;
+								break;
+							}
+							j++;
+						}
+					}
+				}
+			}
+		}
+		printf("%s", ser_pep.name);
+		if (count == 0){
+			sprintf(buff, "Invalid selection");
+			if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
+				fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
+				free(csock);
+				return;
+			}
+			memset(recvbuf, 0, recvbuf_len);
+			if ((recv_byte_cnt = recv(*csock, recvbuf, recvbuf_len, 0)) == SOCKET_ERROR){
+				fprintf(stderr, "Error receiving data %d\n", WSAGetLastError());
+				free(csock);
+				return;
+			}
+			continue;
+		}
+		get_booked_appointments(f, ser, ser_pep, buff);
+		strcat(buff, "\nEnter 0 to back\nEnter date to book appointment.\n");
+		if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
+			fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
+			free(csock);
+			return;
+		}
+		memset(recvbuf, 0, recvbuf_len);
+		if ((recv_byte_cnt = recv(*csock, recvbuf, recvbuf_len, 0)) == SOCKET_ERROR){
+			fprintf(stderr, "Error receiving data %d\n", WSAGetLastError());
+			free(csock);
+			return;
+		}
+		option = atoi(recvbuf);//scanf("%d", &option);
+		if (option == 0)
+			continue;
 
 	}
 }
