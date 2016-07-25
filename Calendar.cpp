@@ -69,6 +69,21 @@ int convert_date_into_day(int year,int month,int day) {
 	return dofy;
 }
 
+int convert_day_into_date(int year,int month,int day) {
+
+	int mo[12] = { 31, 28 + leap(year), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+	int i;
+	int dofy = 0;   // EDIT
+
+	for (i = 0; i<(month - 1); i++) {
+		dofy += mo[i];
+	}
+
+	dofy += day;
+	return dofy;
+}
+
 
 void get_booked_appointments(FILE *f, struct service ser, struct service_people ser_pep, char *buff){
 	fseek(f, (ser.ID - 1) * 50 * 180, 0);
@@ -343,7 +358,7 @@ void calendarstore(int *csock, int current_user_id){
 		fread(&ser, sizeof(struct service), 1, f);
 		memset(&buff, 0, 1024);
 		menu_services(f, ser,offset, csock);
-		sprintf(buff, "\n\People are:");
+		sprintf(buff, "\n\nPeople are:");
 		if (print_service_people(f, ser, buff) == 0){
 			if ((bytecount = send(*csock, buff, 1024, 0)) == SOCKET_ERROR){
 				fprintf(stderr, "Error sending data %d\n", WSAGetLastError());
